@@ -1,0 +1,58 @@
+{
+  "name": "modelstack",
+  "version": "0.1.0",
+  "description": "A smart local AI setup planner for real computers.",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Strix-T/ModelStack.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Strix-T/ModelStack/issues"
+  },
+  "homepage": "https://github.com/Strix-T/ModelStack#readme",
+  "type": "module",
+  "bin": {
+    "modelstack": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "packageManager": "pnpm@10.20.0",
+  "pnpm": {
+    "onlyBuiltDependencies": ["electron", "esbuild"]
+  },
+  "scripts": {
+    "build": "tsup src/cli/index.ts --format esm --dts --clean",
+    "dev": "tsx src/cli/index.ts",
+    "lint": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prepublishOnly": "pnpm build && pnpm test",
+    "desktop:dev": "pnpm --filter @modelstack/desktop dev",
+    "desktop:build": "pnpm --filter @modelstack/desktop build",
+    "desktop:dist": "pnpm --filter @modelstack/desktop dist",
+    "desktop:dist:unsigned": "pnpm --filter @modelstack/desktop dist:unsigned"
+  },
+  "dependencies": {
+    "@inquirer/prompts": "^7.8.4",
+    "boxen": "^8.0.1",
+    "chalk": "^5.4.1",
+    "cli-table3": "^0.6.5",
+    "commander": "^14.0.1",
+    "execa": "^9.6.0",
+    "ora": "^8.2.0",
+    "systeminformation": "^5.27.11",
+    "zod": "^4.1.5"
+  },
+  "devDependencies": {
+    "@types/node": "^24.5.2",
+    "tsup": "^8.5.0",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  }
+}

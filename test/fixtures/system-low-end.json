@@ -1,0 +1,19 @@
+{
+  "os": "linux",
+  "cpuModel": "Intel Core i5",
+  "cpuCores": 4,
+  "ramGb": 8,
+  "freeRamGb": 6,
+  "storageFreeGb": 120,
+  "hardwareBand": "small",
+  "gpuBackend": "unknown",
+  "detectionWarnings": [
+    "GPU memory could not be determined; vision and image generation estimates are conservative."
+  ],
+  "confidence": "medium",
+  "runtimes": {
+    "ollamaInstalled": true,
+    "llamaCppInstalled": false,
+    "pythonInstalled": true
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "os": "linux",
+  "cpuModel": "AMD Threadripper",
+  "cpuCores": 32,
+  "ramGb": 128,
+  "freeRamGb": 96,
+  "gpuVendor": "nvidia",
+  "gpuModel": "RTX 6000 Ada",
+  "gpuVramGb": 48,
+  "storageFreeGb": 4000,
+  "hardwareBand": "xlarge",
+  "gpuBackend": "cuda",
+  "detectionWarnings": [],
+  "confidence": "high",
+  "runtimes": {
+    "ollamaInstalled": true,
+    "llamaCppInstalled": true,
+    "pythonInstalled": true
+  }
+}

@@ -1,0 +1,115 @@
+# Publishes signed (and on macOS, notarized) installers to GitHub Releases when you push a version tag (e.g. v0.1.0).
+# Required secrets: see docs/DESKTOP_RELEASE.md
+# Mac-only: change matrix.os below to [macos-latest] until you have a Windows Authenticode certificate.
+
+name: Desktop release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.20.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Verify macOS signing and notarization secrets
+        if: matrix.os == 'macos-latest'
+        env:
+          MAC_CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          MAC_CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          for var in MAC_CSC_LINK MAC_CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID; do
+            eval "val=\$$var"
+            if [ -z "$val" ]; then
+              echo "::error::Missing GitHub Actions secret: $var. See docs/DESKTOP_RELEASE.md"
+              exit 1
+            fi
+          done
+
+      - name: Verify Windows signing secrets
+        if: matrix.os == 'windows-latest'
+        shell: bash
+        env:
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+        run: |
+          for var in WIN_CSC_LINK WIN_CSC_KEY_PASSWORD; do
+            eval "val=\$$var"
+            if [ -z "$val" ]; then
+              echo "::error::Missing GitHub Actions secret: $var. See docs/DESKTOP_RELEASE.md"
+              exit 1
+            fi
+          done
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint and test (root)
+        run: pnpm lint && pnpm test
+
+      - name: Build desktop
+        run: pnpm --filter @modelstack/desktop build
+
+      - name: Write macOS codesign certificate (PFX)
+        if: matrix.os == 'macos-latest'
+        working-directory: desktop
+        env:
+          MAC_CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+        run: |
+          python3 -c "import os,base64,pathlib; pathlib.Path('mac-codesign.p12').write_bytes(base64.b64decode(os.environ['MAC_CSC_LINK'].strip()))"
+
+      - name: Write Windows codesign certificate (PFX)
+        if: matrix.os == 'windows-latest'
+        working-directory: desktop
+        env:
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+        shell: pwsh
+        run: |
+          $bytes = [Convert]::FromBase64String($env:WIN_CSC_LINK)
+          [IO.File]::WriteAllBytes((Join-Path (Get-Location) "win-codesign.pfx"), $bytes)
+
+      - name: Package and publish (macOS)
+        if: matrix.os == 'macos-latest'
+        working-directory: desktop
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          CSC_LINK: mac-codesign.p12
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: pnpm exec electron-builder --config electron-builder.config.cjs --publish always
+
+      - name: Package and publish (Windows)
+        if: matrix.os == 'windows-latest'
+        working-directory: desktop
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          CSC_LINK: win-codesign.pfx
+          CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+        run: pnpm exec electron-builder --config electron-builder.config.cjs --publish always

@@ -1,0 +1,10 @@
+node_modules
+dist
+desktop/release
+desktop/out
+desktop/mac-codesign.p12
+desktop/win-codesign.pfx
+.DS_Store
+.turbo
+coverage
+*.log

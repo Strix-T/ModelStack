@@ -1,0 +1,20 @@
+{
+  "os": "windows",
+  "cpuModel": "AMD Ryzen 9",
+  "cpuCores": 16,
+  "ramGb": 64,
+  "freeRamGb": 52,
+  "gpuVendor": "nvidia",
+  "gpuModel": "RTX 4080",
+  "gpuVramGb": 16,
+  "storageFreeGb": 1200,
+  "hardwareBand": "large",
+  "gpuBackend": "cuda",
+  "detectionWarnings": [],
+  "confidence": "high",
+  "runtimes": {
+    "ollamaInstalled": true,
+    "llamaCppInstalled": true,
+    "pythonInstalled": true
+  }
+}

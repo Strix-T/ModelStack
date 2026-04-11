@@ -1,0 +1,20 @@
+{
+  "os": "macos",
+  "cpuModel": "Apple M3",
+  "cpuCores": 8,
+  "ramGb": 16,
+  "freeRamGb": 10,
+  "unifiedMemoryGb": 16,
+  "storageFreeGb": 200,
+  "hardwareBand": "medium",
+  "gpuBackend": "metal",
+  "gpuModel": "Apple M3",
+  "gpuVendor": "Apple",
+  "detectionWarnings": [],
+  "confidence": "high",
+  "runtimes": {
+    "ollamaInstalled": true,
+    "llamaCppInstalled": true,
+    "pythonInstalled": true
+  }
+}
