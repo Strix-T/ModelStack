@@ -103,6 +103,8 @@ Workflow: [`.github/workflows/desktop-release.yml`](../.github/workflows/desktop
 
 Friends should download the **DMG/ZIP (Mac)** or **NSIS installer (Windows)** from the **Releases** page, not a random zip of the repo.
 
+**CI note:** GitHub Actions currently builds **macOS arm64** installers only (Apple Silicon). Intel Mac users can run `pnpm desktop:dist` locally with both architectures, or add an `x64` job/matrix later.
+
 ## Windows releases
 
 The workflow is **macOS-only** until you add Windows signing. To ship Windows installers:
