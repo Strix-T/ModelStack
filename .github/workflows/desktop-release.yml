@@ -14,6 +14,7 @@ permissions:
 
 jobs:
   release:
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
@@ -73,13 +74,13 @@ jobs:
       - name: Build desktop
         run: pnpm --filter @modelstack/desktop build
 
-      - name: Write macOS codesign certificate (PFX)
+      # Unlocks a CI keychain; avoids codesign hanging when only CSC_LINK=file is used.
+      - name: Import macOS code signing certificates
         if: matrix.os == 'macos-latest'
-        working-directory: desktop
-        env:
-          MAC_CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
-        run: |
-          python3 -c "import os,base64,pathlib; pathlib.Path('mac-codesign.p12').write_bytes(base64.b64decode(os.environ['MAC_CSC_LINK'].strip()))"
+        uses: apple-actions/import-codesign-certs@v3
+        with:
+          p12-file-base64: ${{ secrets.MAC_CSC_LINK }}
+          p12-password: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
 
       - name: Write Windows codesign certificate (PFX)
         if: matrix.os == 'windows-latest'
@@ -97,8 +98,6 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-          CSC_LINK: mac-codesign.p12
-          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}

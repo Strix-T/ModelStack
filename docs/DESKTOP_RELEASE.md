@@ -57,7 +57,7 @@ Notarization uses Apple’s **notarytool** (Xcode 13+ on the GitHub runner).
 
 | Secret | Value |
 |--------|--------|
-| `MAC_CSC_LINK` | Base64 of your **Developer ID Application** `.p12` file |
+| `MAC_CSC_LINK` | Base64 of your **Developer ID Application** `.p12` file (used by `apple-actions/import-codesign-certs` in CI — do not commit the binary) |
 | `MAC_CSC_KEY_PASSWORD` | Password you set when exporting the `.p12` |
 | `APPLE_ID` | Your Apple ID email |
 | `APPLE_APP_SPECIFIC_PASSWORD` | The app-specific password (not your Apple ID password) |
