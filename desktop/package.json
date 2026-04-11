@@ -1,6 +1,6 @@
 {
   "name": "@modelstack/desktop",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "ModelStack desktop — local AI stack planner",
   "author": "ModelStack contributors",
   "type": "module",

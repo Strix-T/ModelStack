@@ -1,6 +1,6 @@
 {
   "name": "modelstack",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "A smart local AI setup planner for real computers.",
   "repository": {
     "type": "git",
