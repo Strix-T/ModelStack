@@ -2,6 +2,34 @@
 
 The Electron app lives in [`desktop/`](../desktop/). This doc is the checklist for **signed, notarized (macOS)** builds you can share without Gatekeeper/SmartScreen fighting your users.
 
+**Repository:** [github.com/Strix-T/ModelStack](https://github.com/Strix-T/ModelStack) — `main` should track GitHub; CI runs on push/PR.
+
+### Done for you in the repo
+
+- GitHub Actions workflows (including [desktop release](../.github/workflows/desktop-release.yml)).
+- macOS **hardened runtime** entitlements and `electron-builder` config.
+- Release workflow is **macOS-only** by default so you are not blocked on a Windows signing cert; add `windows-latest` to the workflow matrix when `WIN_CSC_*` secrets exist.
+
+### Only you can do (accounts / private keys)
+
+No tool can create your **Apple Developer ID** certificate, **notarization** credentials, or **GitHub Actions secret** values—they live in your Apple and GitHub accounts.
+
+1. Add the secrets in [GitHub → ModelStack → Settings → Secrets and variables → Actions](https://github.com/Strix-T/ModelStack/settings/secrets/actions) (use the names in the tables below).
+2. Optional: install [GitHub CLI](https://cli.github.com/) and run from your Mac (after `gh auth login`):
+
+   ```bash
+   cd /path/to/ModelStack
+   gh secret set MAC_CSC_LINK --repo Strix-T/ModelStack --body "$(base64 -i YourCert.p12)"
+   gh secret set MAC_CSC_KEY_PASSWORD --repo Strix-T/ModelStack
+   gh secret set APPLE_ID --repo Strix-T/ModelStack
+   gh secret set APPLE_APP_SPECIFIC_PASSWORD --repo Strix-T/ModelStack
+   gh secret set APPLE_TEAM_ID --repo Strix-T/ModelStack
+   ```
+
+   (`gh secret set` without `--body` prompts securely for the value.)
+
+3. Then tag and push: `git tag v0.1.0 && git push origin v0.1.0` (version must match `package.json` / `desktop/package.json`).
+
 ## Prerequisites
 
 1. **Apple Developer Program** membership (paid) for Mac distribution outside your own machine.
@@ -75,16 +103,13 @@ Workflow: [`.github/workflows/desktop-release.yml`](../.github/workflows/desktop
 
 Friends should download the **DMG/ZIP (Mac)** or **NSIS installer (Windows)** from the **Releases** page, not a random zip of the repo.
 
-## Mac-only releases (no Windows cert yet)
+## Windows releases
 
-Edit the workflow matrix so only macOS runs:
+The workflow is **macOS-only** until you add Windows signing. To ship Windows installers:
 
-```yaml
-matrix:
-  os: [macos-latest]
-```
-
-Commit that change until you have `WIN_CSC_LINK` / `WIN_CSC_KEY_PASSWORD`.
+1. Add secrets `WIN_CSC_LINK` (base64 PFX) and `WIN_CSC_KEY_PASSWORD`.
+2. In [`.github/workflows/desktop-release.yml`](../.github/workflows/desktop-release.yml), set `matrix.os` to `[macos-latest, windows-latest]`.
+3. Commit, tag, and push the tag again (or cut a new version tag).
 
 ## Local production build (optional)
 

@@ -1,6 +1,6 @@
 # Publishes signed (and on macOS, notarized) installers to GitHub Releases when you push a version tag (e.g. v0.1.0).
 # Required secrets: see docs/DESKTOP_RELEASE.md
-# Mac-only: change matrix.os below to [macos-latest] until you have a Windows Authenticode certificate.
+# Windows: add `windows-latest` to matrix.os and set WIN_CSC_* secrets when you have an Authenticode cert.
 
 name: Desktop release
 
@@ -17,7 +17,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, windows-latest]
+        os: [macos-latest]
     runs-on: ${{ matrix.os }}
 
     steps:
