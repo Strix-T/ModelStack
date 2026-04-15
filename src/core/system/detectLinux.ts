@@ -29,7 +29,41 @@ export async function detectLinux(runner: ExecaMethod): Promise<NativeProbeResul
     };
   }
 
-  warnings.push("CUDA probe did not find an NVIDIA GPU; using generic Linux hardware data.");
+  const rocmProduct = await maybeCommand(runner, "rocm-smi", ["--showproductname"]);
+  if (rocmProduct) {
+    const line = rocmProduct.split("\n").find((l) => l.trim().length > 0) ?? "AMD GPU";
+    return {
+      gpuBackend: "rocm",
+      gpuVendor: "amd",
+      gpuModel: line.trim(),
+      warnings,
+    };
+  }
+
+  const lspci = await maybeCommand(runner, "lspci", []);
+  const ls = lspci?.toLowerCase() ?? "";
+
+  if (ls.includes("advanced micro devices") && (ls.includes("vga") || ls.includes("display"))) {
+    warnings.push("AMD GPU detected without a working ROCm probe; treat acceleration as uncertain unless you install ROCm.");
+    return {
+      gpuBackend: "unknown",
+      gpuVendor: "amd",
+      gpuModel: "AMD GPU (ROCm not confirmed)",
+      warnings,
+    };
+  }
+
+  if (ls.includes("intel corporation") && (ls.includes("iris") || ls.includes("uhd") || ls.includes("graphics"))) {
+    warnings.push("Intel integrated graphics detected; local GPU acceleration varies by driver and framework.");
+    return {
+      gpuBackend: "unknown",
+      gpuVendor: "intel",
+      gpuModel: "Intel iGPU",
+      warnings,
+    };
+  }
+
+  warnings.push("No NVIDIA GPU or ROCm stack detected; assuming CPU-first Linux unless you add discrete GPU tooling.");
   return {
     gpuBackend: "unknown",
     warnings,

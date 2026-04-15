@@ -21,6 +21,7 @@ function inferRuntime(item: HfModelListItem): CandidateModel["runtime"] {
 
   if (formats.includes("gguf")) {
     runtimes.add("llamacpp");
+    runtimes.add("ollama");
   }
 
   if (formats.includes("safetensors") || item.library_name?.includes("transformers")) {
@@ -39,13 +40,30 @@ function inferRuntime(item: HfModelListItem): CandidateModel["runtime"] {
 }
 
 function estimateMemoryProfile(kind: CandidateModel["kind"], parameterClass: CandidateModel["parameterClass"], largestFileGb?: number) {
-  const baseRam = kind === "embedding" ? 4 : parameterClass === "small" ? 8 : parameterClass === "medium" ? 14 : 22;
+  const baseRam =
+    kind === "embedding"
+      ? 4
+      : kind === "reranker"
+        ? 5
+        : kind === "speech_to_text"
+          ? 7
+          : kind === "text_to_speech"
+            ? 8
+            : parameterClass === "small"
+              ? 8
+              : parameterClass === "medium"
+                ? 14
+                : 22;
   const largest = largestFileGb ?? baseRam;
+  const minFloor =
+    kind === "embedding" ? 2 : kind === "reranker" ? 3 : kind === "speech_to_text" ? 4 : kind === "text_to_speech" ? 4 : 6;
   return {
-    minRamGb: Math.max(kind === "embedding" ? 2 : 6, Math.min(baseRam, largest)),
+    minRamGb: Math.max(minFloor, Math.min(baseRam, largest)),
     recommendedRamGb: Math.max(baseRam + 2, Math.ceil(largest + 2)),
-    minVramGb: kind === "image" || kind === "vision" ? Math.max(6, Math.ceil((largestFileGb ?? baseRam) / 2)) : undefined,
-    recommendedVramGb: kind === "image" || kind === "vision" ? Math.max(8, Math.ceil((largestFileGb ?? baseRam) * 0.75)) : undefined,
+    minVramGb:
+      kind === "image" || kind === "vision" ? Math.max(6, Math.ceil((largestFileGb ?? baseRam) / 2)) : undefined,
+    recommendedVramGb:
+      kind === "image" || kind === "vision" ? Math.max(8, Math.ceil((largestFileGb ?? baseRam) * 0.75)) : undefined,
   };
 }
 
@@ -54,8 +72,27 @@ export function parseHfModelToCandidate(item: HfModelListItem, kind: CandidateMo
   const parameterClass = inferParameterClass(item.id);
   const memoryProfile = estimateMemoryProfile(kind, parameterClass, largestFileGb);
   const qualityTier =
-    kind === "embedding" ? 4 : kind === "image" ? 4 : parameterClass === "small" ? 3 : parameterClass === "medium" ? 4 : 5;
-  const speedTier = kind === "embedding" ? 4 : parameterClass === "small" ? 4 : parameterClass === "medium" ? 3 : 2;
+    kind === "embedding" || kind === "reranker"
+      ? 4
+      : kind === "image"
+        ? 4
+        : kind === "speech_to_text" || kind === "text_to_speech"
+          ? 3
+          : parameterClass === "small"
+            ? 3
+            : parameterClass === "medium"
+              ? 4
+              : 5;
+  const speedTier =
+    kind === "embedding" || kind === "reranker"
+      ? 4
+      : kind === "speech_to_text" || kind === "text_to_speech"
+        ? 3
+        : parameterClass === "small"
+          ? 4
+          : parameterClass === "medium"
+            ? 3
+            : 2;
   const tasks = inferTasksFromHfItem(kind, item);
   const discoveryConfidence = inferDiscoveryConfidenceFromHfItem(kind, item);
 

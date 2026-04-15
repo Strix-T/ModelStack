@@ -77,7 +77,18 @@ describe("questionnaire normalization", () => {
       allowsSlowSmart: true,
       requiresEmbeddings: true,
       requiresVision: false,
-      requiresImageGeneration: false
+      requiresImageGeneration: false,
+      preferredEngine: "auto",
+      installComfort: "moderate",
+      formatPreference: "auto",
+      contextPreference: "not_sure",
+      quantizationTolerance: "balanced",
+      requiresReranker: false,
+      requiresOCR: false,
+      requiresToolCalling: false,
+      requiresLongContext: false,
+      requiresSpeechToText: false,
+      requiresSpeechSynthesis: false,
     });
 
     const intent = await runQuestionnaire();

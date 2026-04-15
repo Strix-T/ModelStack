@@ -1,10 +1,14 @@
 #!/usr/bin/env node
 import { Command } from "commander";
 
+import { runApplyCommand } from "./commands/apply.js";
+import { runChatCommand } from "./commands/chat.js";
+import { runIngestCommand } from "./commands/ingest.js";
 import { runQuestionnaireCommand } from "./commands/questionnaire.js";
 import { runRecommendCommand } from "./commands/recommend.js";
 import { runRefreshCacheCommand } from "./commands/refresh-cache.js";
 import { runScanCommand } from "./commands/scan.js";
+import { runStatusCommand } from "./commands/status.js";
 
 const program = new Command();
 
@@ -47,6 +51,57 @@ program
   .option("--fast", "Bias the recommendation flow toward faster responses")
   .action(async (options) => {
     await runRecommendCommand(options);
+  });
+
+program
+  .command("apply")
+  .description("Apply a saved recommendation: verify the machine, pull Ollama models when possible, and create a project folder.")
+  .requiredOption("--from-json <path>", "Path to JSON from `modelstack recommend --json`")
+  .option(
+    "--bundle-label <label>",
+    "Which bundle to start from (best_overall, fastest, best_quality, most_local_friendly). Falls forward if it no longer fits.",
+  )
+  .option("--project-dir <path>", "Directory for config and data (default: ./modelstack-project)", "modelstack-project")
+  .option("-y, --yes", "Skip interactive confirmation for large downloads")
+  .action(async (options) => {
+    await runApplyCommand({
+      fromJson: options.fromJson,
+      bundleLabel: options.bundleLabel,
+      projectDir: options.projectDir,
+      yes: options.yes,
+    });
+  });
+
+program
+  .command("status")
+  .description("Show runtime detection and optional dry-run Ollama pulls from a recommendation file.")
+  .option("--from-json <path>", "Recommendation JSON to summarize")
+  .option("--bundle-label <label>", "Bundle label when using --from-json")
+  .action(async (options) => {
+    await runStatusCommand({
+      fromJson: options.fromJson,
+      bundleLabel: options.bundleLabel,
+    });
+  });
+
+program
+  .command("chat")
+  .description("Start an interactive Ollama chat using the primary model tag from a recommendation file.")
+  .requiredOption("--from-json <path>", "Path to JSON from `modelstack recommend --json`")
+  .option("--bundle-label <label>", "Bundle label (default: first bundle in the file)")
+  .action(async (options) => {
+    await runChatCommand({
+      fromJson: options.fromJson,
+      bundleLabel: options.bundleLabel,
+    });
+  });
+
+program
+  .command("ingest")
+  .description("Document ingestion (planned; not yet implemented).")
+  .option("--project-dir <path>", "Project directory (default: ./modelstack-project)", "modelstack-project")
+  .action(async (options) => {
+    await runIngestCommand({ projectDir: options.projectDir });
   });
 
 program.parseAsync(process.argv).catch((error: unknown) => {

@@ -1,12 +1,27 @@
 import { describe, expect, it } from "vitest";
 
+import { parseHfModelToCandidate } from "../src/core/huggingface/parseModelInfo.js";
 import { HfClient } from "../src/core/huggingface/hfClient.js";
 import { getSeedCandidateCollections } from "../src/core/models/candidateRegistry.js";
 import { rankRecommendedBundles } from "../src/core/scoring/finalRank.js";
 import midMacSystem from "./fixtures/system-mid-mac.json" with { type: "json" };
 import { systemProfileSchema } from "../src/core/shared/schemas.js";
+import { minimalIntent } from "./helpers/minimalIntent.js";
 
 describe("Hugging Face integration", () => {
+  it("tags GGUF repos as Ollama- and llama.cpp-compatible", () => {
+    const candidate = parseHfModelToCandidate(
+      {
+        id: "fixture/gguf-weights",
+        pipeline_tag: "text-generation",
+        siblings: [{ rfilename: "model-Q4_K_M.gguf", lfs: { size: 4 * 1024 ** 3 } }],
+      },
+      "text",
+    );
+    expect(candidate.runtime).toContain("ollama");
+    expect(candidate.runtime).toContain("llamacpp");
+  });
+
   it("discovers bounded candidates from the API", async () => {
     const client = new HfClient({
       fetchImpl: (async () =>
@@ -70,16 +85,11 @@ describe("Hugging Face integration", () => {
     const discovered = await client.discoverCandidates(1);
     expect(discovered.warnings.length).toBeGreaterThan(0);
 
-    const result = rankRecommendedBundles(getSeedCandidateCollections(), systemProfileSchema.parse(midMacSystem), {
-      primaryUseCases: ["general_chat"],
-      inputTypes: ["text"],
-      priority: "balanced",
-      localPreference: "prefer_local",
-      allowsSlowSmart: true,
-      requiresEmbeddings: false,
-      requiresVision: false,
-      requiresImageGeneration: false,
-    });
+    const result = rankRecommendedBundles(
+      getSeedCandidateCollections(),
+      systemProfileSchema.parse(midMacSystem),
+      minimalIntent({ requiresEmbeddings: false }),
+    );
 
     expect(result.bundles.length).toBe(4);
   });

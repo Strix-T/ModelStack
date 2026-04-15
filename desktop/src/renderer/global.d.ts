@@ -9,6 +9,11 @@ declare global {
           priority: string;
           localPreference: string;
           allowsSlowSmart: boolean;
+          preferredEngine?: string;
+          installComfort?: string;
+          formatPreference?: string;
+          contextPreference?: string;
+          quantizationTolerance?: string;
         };
         offlineOnly?: boolean;
       }) => Promise<unknown>;
@@ -26,6 +31,25 @@ declare global {
       getTheme: () => Promise<{ shouldUseDarkColors: boolean }>;
       onProgress: (callback: (data: unknown) => void) => () => void;
       onNativeThemeChanged: (callback: (data: { shouldUseDarkColors: boolean }) => void) => () => void;
+      pickProjectDirectory: () => Promise<{ ok: true; path: string } | { ok: false }>;
+      applyStack: (payload: {
+        result: unknown;
+        bundleLabel?: string;
+        projectDir: string;
+        assumeYes: boolean;
+      }) => Promise<
+        | {
+            success: true;
+            bundle: unknown;
+            mode: string;
+            projectDir: string;
+            notes: string[];
+          }
+        | { success: false; reason: string; skippedBundleLabels: string[] }
+      >;
+      onApplyProgress: (
+        callback: (data: { kind: "steps"; text: string } | { kind: "pull"; chunk: string }) => void,
+      ) => () => void;
     };
   }
 }

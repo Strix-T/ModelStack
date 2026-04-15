@@ -86,6 +86,7 @@ export const curatedEmbeddingModels: CandidateModel[] = [
       recommendedRamGb: 5,
     },
     discoveryConfidence: "high",
+    multilingualSupport: "high",
     notes: ["Compact multilingual retrieval option."],
   },
 ];

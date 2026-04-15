@@ -14,6 +14,11 @@ export type RecommendPayload = {
     priority: string;
     localPreference: string;
     allowsSlowSmart: boolean;
+    preferredEngine?: string;
+    installComfort?: string;
+    formatPreference?: string;
+    contextPreference?: string;
+    quantizationTolerance?: string;
   };
   offlineOnly?: boolean;
 };
@@ -55,6 +60,28 @@ contextBridge.exposeInMainWorld("modelstack", {
     ipcRenderer.on("modelstack:progress", listener);
     return () => {
       ipcRenderer.removeListener("modelstack:progress", listener);
+    };
+  },
+
+  pickProjectDirectory: (): Promise<{ ok: true; path: string } | { ok: false }> =>
+    ipcRenderer.invoke("modelstack:pick-project-dir"),
+
+  applyStack: (payload: {
+    result: unknown;
+    bundleLabel?: string;
+    projectDir: string;
+    assumeYes: boolean;
+  }) => ipcRenderer.invoke("modelstack:apply-stack", payload),
+
+  onApplyProgress: (
+    callback: (data: { kind: "steps"; text: string } | { kind: "pull"; chunk: string }) => void,
+  ): (() => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, data: unknown): void => {
+      callback(data as { kind: "steps"; text: string } | { kind: "pull"; chunk: string });
+    };
+    ipcRenderer.on("modelstack:apply-progress", listener);
+    return () => {
+      ipcRenderer.removeListener("modelstack:apply-progress", listener);
     };
   },
 

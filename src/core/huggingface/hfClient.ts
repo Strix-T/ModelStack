@@ -68,6 +68,9 @@ export class HfClient {
       embedding: [],
       vision: [],
       image: [],
+      reranker: [],
+      speechToText: [],
+      textToSpeech: [],
     };
     const warnings: string[] = [];
 

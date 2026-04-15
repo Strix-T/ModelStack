@@ -4,7 +4,17 @@ import chalk from "chalk";
 import { userIntentSchema } from "../shared/schemas.js";
 import type { UserIntent } from "../shared/types.js";
 import { normalizeAnswers } from "./normalizeAnswers.js";
-import { INPUT_TYPE_OPTIONS, PDF_OPTIONS, PRIMARY_USE_CASE_OPTIONS } from "./questions.js";
+import {
+  CONTEXT_PREFERENCE_OPTIONS,
+  FORMAT_PREFERENCE_OPTIONS,
+  INPUT_TYPE_OPTIONS,
+  INSTALL_COMFORT_OPTIONS,
+  LOCAL_PREFERENCE_OPTIONS,
+  PDF_OPTIONS,
+  PREFERRED_ENGINE_OPTIONS,
+  PRIMARY_USE_CASE_OPTIONS,
+  QUANTIZATION_TOLERANCE_OPTIONS,
+} from "./questions.js";
 
 export type QuestionnairePromptApi = {
   checkbox: typeof checkbox;
@@ -91,12 +101,52 @@ export async function runQuestionnaire(promptApi: QuestionnairePromptApi = defau
   });
 
   const localPreference = await promptApi.select<UserIntent["localPreference"]>({
-    message: "Do you want everything fully local?",
-    choices: [
-      { value: "local_only", name: "Yes" },
-      { value: "prefer_local", name: "Prefer local" },
-      { value: "no_preference", name: "No preference" },
-    ],
+    message:
+      "How strict should we be about easy, on-your-computer setups?\nSome models need more RAM or a trickier install — this tells us how much to avoid that.",
+    choices: LOCAL_PREFERENCE_OPTIONS.map((option) => ({
+      value: option.value,
+      name: `${option.label} — ${option.hint}`,
+    })),
+  });
+
+  const preferredEngine = await promptApi.select<UserIntent["preferredEngine"]>({
+    message: "Which runtime do you want to prioritize?",
+    choices: PREFERRED_ENGINE_OPTIONS.map((option) => ({
+      value: option.value,
+      name: option.label,
+    })),
+  });
+
+  const installComfort = await promptApi.select<UserIntent["installComfort"]>({
+    message: "How much setup complexity is OK?",
+    choices: INSTALL_COMFORT_OPTIONS.map((option) => ({
+      value: option.value,
+      name: option.label,
+    })),
+  });
+
+  const formatPreference = await promptApi.select<UserIntent["formatPreference"]>({
+    message: "Preferred model weight format?",
+    choices: FORMAT_PREFERENCE_OPTIONS.map((option) => ({
+      value: option.value,
+      name: option.label,
+    })),
+  });
+
+  const contextPreference = await promptApi.select<UserIntent["contextPreference"]>({
+    message: "How large are typical prompts or documents?",
+    choices: CONTEXT_PREFERENCE_OPTIONS.map((option) => ({
+      value: option.value,
+      name: option.label,
+    })),
+  });
+
+  const quantizationTolerance = await promptApi.select<UserIntent["quantizationTolerance"]>({
+    message: "Quantization vs quality tradeoff?",
+    choices: QUANTIZATION_TOLERANCE_OPTIONS.map((option) => ({
+      value: option.value,
+      name: option.label,
+    })),
   });
 
   const allowsSlowSmart = await promptApi.select<boolean>({
@@ -128,5 +178,10 @@ export async function runQuestionnaire(promptApi: QuestionnairePromptApi = defau
     priority,
     localPreference,
     allowsSlowSmart,
+    preferredEngine,
+    installComfort,
+    formatPreference,
+    contextPreference,
+    quantizationTolerance,
   });
 }

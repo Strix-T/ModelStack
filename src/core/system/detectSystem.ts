@@ -98,16 +98,21 @@ export async function detectSystem(deps: DetectSystemDeps = {}): Promise<SystemP
   const platform = deps.platform ?? process.platform;
   const warnings: string[] = [];
 
-  const [cpu, mem, graphics, fsSizes, nativeProbe, ollamaInstalled, llamaCppInstalled, pythonInstalled] = await Promise.all([
-    siImpl.cpu(),
-    siImpl.mem(),
-    siImpl.graphics(),
-    siImpl.fsSize(),
-    detectNativeProbe(deps),
-    isCommandAvailable("ollama", deps),
-    isCommandAvailable("llama-cli", deps),
-    isCommandAvailable("python", deps).then((found) => found || isCommandAvailable("python3", deps)),
-  ]);
+  const runner = deps.execaImpl ?? execa;
+
+  const [cpu, mem, graphics, fsSizes, nativeProbe, ollamaInstalled, llamaCppInstalled, pythonInstalled, dockerInstalled, mlxPythonInstalled] =
+    await Promise.all([
+      siImpl.cpu(),
+      siImpl.mem(),
+      siImpl.graphics(),
+      siImpl.fsSize(),
+      detectNativeProbe(deps),
+      isCommandAvailable("ollama", deps),
+      isCommandAvailable("llama-cli", deps),
+      isCommandAvailable("python", deps).then((found) => found || isCommandAvailable("python3", deps)),
+      isCommandAvailable("docker", deps),
+      runner("python3", ["-c", "import mlx"], { reject: false }).then((r) => r.exitCode === 0),
+    ]);
 
   warnings.push(...nativeProbe.warnings);
 
@@ -145,6 +150,8 @@ export async function detectSystem(deps: DetectSystemDeps = {}): Promise<SystemP
       ollamaInstalled,
       llamaCppInstalled,
       pythonInstalled,
+      dockerInstalled,
+      mlxPythonInstalled,
     },
   });
 

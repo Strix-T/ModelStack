@@ -12,7 +12,9 @@ import {
 import type { QuestionnaireAnswers } from "@modelstack/core/questionnaire/normalizeAnswers.js";
 import { normalizeAnswers } from "@modelstack/core/questionnaire/normalizeAnswers.js";
 import { readCacheSnapshot } from "@modelstack/core/shared/io.js";
+import { recommendationResultSchema } from "@modelstack/core/shared/schemas.js";
 import type { RecommendationResult, SystemProfile } from "@modelstack/core/shared/types.js";
+import { applyStack } from "@modelstack/execution/applyStack.js";
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, shell } from "electron";
 import log from "electron-log";
 import electronUpdater from "electron-updater";
@@ -87,6 +89,14 @@ function isDev(): boolean {
 
 function sendProgress(payload: RecommendationProgress): void {
   mainWindow?.webContents.send("modelstack:progress", payload);
+}
+
+type ApplyProgressEvent =
+  | { kind: "steps"; text: string }
+  | { kind: "pull"; chunk: string };
+
+function sendApplyProgress(payload: ApplyProgressEvent): void {
+  mainWindow?.webContents.send("modelstack:apply-progress", payload);
 }
 
 function createWindow(): void {
@@ -251,6 +261,57 @@ function setupIpc(): void {
   ipcMain.handle("modelstack:get-theme", () => ({
     shouldUseDarkColors: nativeTheme.shouldUseDarkColors,
   }));
+
+  ipcMain.handle("modelstack:pick-project-dir", async () => {
+    const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow ?? undefined, {
+      title: "Choose folder for your ModelStack project",
+      buttonLabel: "Select folder",
+      properties: ["openDirectory", "createDirectory"],
+      defaultPath: app.getPath("documents"),
+    });
+    if (canceled || !filePaths[0]) {
+      return { ok: false as const };
+    }
+    return { ok: true as const, path: filePaths[0] };
+  });
+
+  ipcMain.handle(
+    "modelstack:apply-stack",
+    async (
+      _event,
+      payload: {
+        result: RecommendationResult;
+        bundleLabel?: string;
+        projectDir: string;
+        assumeYes: boolean;
+      },
+    ) => {
+      const parsed = recommendationResultSchema.safeParse(payload.result);
+      if (!parsed.success) {
+        return {
+          success: false as const,
+          reason: "Invalid recommendation data. Run Get recommendations again and retry.",
+          skippedBundleLabels: [] as string[],
+        };
+      }
+      const liveSystem = await getSystemProfile();
+      return applyStack({
+        result: parsed.data,
+        liveSystem,
+        projectDir: payload.projectDir,
+        bundleLabel: payload.bundleLabel,
+        assumeYes: payload.assumeYes,
+        onProgressText: (text: string) => {
+          sendApplyProgress({ kind: "steps", text });
+        },
+        deps: {
+          onOllamaPullChunk: (chunk: string) => {
+            sendApplyProgress({ kind: "pull", chunk });
+          },
+        },
+      });
+    },
+  );
 }
 
 function setupAutoUpdater(): void {

@@ -1,3 +1,5 @@
+import { getEngineDefinition } from "../engines/engineRegistry.js";
+import { describeLocalPreference } from "../questionnaire/questions.js";
 import { formatGbForDisplay } from "../shared/formatGb.js";
 import type { RecommendationResult } from "../shared/types.js";
 
@@ -12,17 +14,32 @@ function renderBundleMarkdown(result: RecommendationResult["bundles"][number]): 
   return [
     `## ${result.label.replaceAll("_", " ")}`,
     "",
+    `- Stack archetype: ${result.stackArchetype ?? "—"}`,
+    `- Recommended engine: ${getEngineDefinition(result.recommendedEngine).label}`,
+    `- Fallback engine: ${getEngineDefinition(result.fallbackEngine).label}`,
+    `- Text variant: ${result.selectedTextVariant ? `${result.selectedTextVariant.quantLabel ?? result.selectedTextVariant.precision} (${result.selectedTextVariant.format})` : "default profile"}`,
     `- Text Model: ${formatModelMd(result.textModel)}`,
     `- Embedding Model: ${formatModelMd(result.embeddingModel)}`,
     `- Vision Model: ${formatModelMd(result.visionModel)}`,
     `- Image Model: ${formatModelMd(result.imageModel)}`,
+    `- Reranker: ${formatModelMd(result.rerankerModel)}`,
+    `- Speech-to-text: ${formatModelMd(result.speechToTextModel)}`,
+    `- Text-to-speech: ${formatModelMd(result.textToSpeechModel)}`,
     `- Load Strategy: ${result.loadStrategy}`,
     ...(result.fitState ? [`- Fit State: ${result.fitState.replaceAll("_", " ")}`] : []),
     `- Peak RAM: ${formatGbForDisplay(result.estimatedPeakRamGb)} GB (heuristic estimate)`,
     `- Peak VRAM: ${result.estimatedPeakVramGb ? `${formatGbForDisplay(result.estimatedPeakVramGb)} GB (heuristic estimate)` : "n/a"}`,
     `- Fit Confidence: ${result.fitConfidence}`,
     ...(result.memoryEstimateSource ? [`- Memory estimate basis: ${result.memoryEstimateSource.replaceAll("_", " ")}`] : []),
+    ...(result.memoryBreakdown
+      ? [
+          `- Memory breakdown (est.): base ${result.memoryBreakdown.baseModelRamGb.toFixed(1)} GB, engine overhead ${result.memoryBreakdown.engineOverheadGb.toFixed(1)} GB, KV/context ${result.memoryBreakdown.kvCacheRamGb.toFixed(1)} GB, secondary models ${result.memoryBreakdown.secondaryModelsRamGb.toFixed(1)} GB`,
+        ]
+      : []),
     "",
+    ...(result.scoreExplanation && result.scoreExplanation.length > 0
+      ? ["### Score notes", ...result.scoreExplanation.map((line) => `- ${line}`), ""]
+      : []),
     "### Why this fits",
     ...result.reasons.map((reason) => `- ${reason}`),
     "",
@@ -66,6 +83,8 @@ export function exportMarkdown(result: RecommendationResult): string {
       result.system.runtimes.ollamaInstalled ? "Ollama" : null,
       result.system.runtimes.llamaCppInstalled ? "llama.cpp" : null,
       result.system.runtimes.pythonInstalled ? "Python" : null,
+      result.system.runtimes.dockerInstalled ? "Docker" : null,
+      result.system.runtimes.mlxPythonInstalled ? "MLX (Python)" : null,
     ]
       .filter(Boolean)
       .join(", ") || "none"}`,
@@ -77,7 +96,12 @@ export function exportMarkdown(result: RecommendationResult): string {
     `- Use cases: ${result.intent.primaryUseCases.join(", ")}`,
     `- Input types: ${result.intent.inputTypes.join(", ")}`,
     `- Priority: ${result.intent.priority}`,
-    `- Local preference: ${result.intent.localPreference}`,
+    `- Ease of running on this computer: ${describeLocalPreference(result.intent.localPreference)}`,
+    `- Preferred engine: ${result.intent.preferredEngine}`,
+    `- Install comfort: ${result.intent.installComfort}`,
+    `- Format preference: ${result.intent.formatPreference}`,
+    `- Context preference: ${result.intent.contextPreference}`,
+    `- Quantization: ${result.intent.quantizationTolerance}`,
     ...bundleSections,
     "",
     "## Global Warnings",

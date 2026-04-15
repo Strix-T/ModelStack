@@ -1,4 +1,5 @@
-import type { CandidateModel, SystemProfile } from "../shared/types.js";
+import { getEngineDefinition } from "../engines/engineRegistry.js";
+import type { CandidateModel, EngineId, SystemProfile } from "../shared/types.js";
 import { practicalRamHeadroomFactor } from "./eligibility.js";
 
 function discoveryConfidenceMultiplier(candidate: CandidateModel): number {
@@ -40,7 +41,64 @@ export function getCommunityReachMultiplier(candidate: CandidateModel): number {
   return floor + (1 - floor) * engagement;
 }
 
-export function getPerformanceScore(candidate: CandidateModel, system: SystemProfile): number {
+function engineRuntimeBonus(engine: EngineId | undefined, system: SystemProfile): number {
+  if (!engine) {
+    let runtimeBonus = 0.15;
+    if (system.runtimes.ollamaInstalled) {
+      runtimeBonus += 0.08;
+    }
+    if (system.runtimes.llamaCppInstalled) {
+      runtimeBonus += 0.08;
+    }
+    if (system.runtimes.pythonInstalled) {
+      runtimeBonus += 0.05;
+    }
+    return runtimeBonus;
+  }
+
+  let bonus = 0.12;
+  switch (engine) {
+    case "ollama":
+      if (system.runtimes.ollamaInstalled) {
+        bonus += 0.14;
+      }
+      break;
+    case "llamacpp":
+    case "lm_studio":
+      if (system.runtimes.llamaCppInstalled || system.runtimes.lmStudioInstalled) {
+        bonus += 0.12;
+      }
+      break;
+    case "transformers":
+    case "vllm":
+      if (system.runtimes.pythonInstalled) {
+        bonus += 0.1;
+      }
+      if (engine === "vllm" && system.runtimes.dockerInstalled) {
+        bonus += 0.06;
+      }
+      break;
+    case "mlx":
+      if (system.runtimes.mlxPythonInstalled || system.runtimes.pythonInstalled) {
+        bonus += 0.1;
+      }
+      break;
+    default:
+      bonus += 0.05;
+  }
+
+  if (getEngineDefinition(engine).installDifficulty === "advanced") {
+    bonus -= 0.03;
+  }
+
+  return bonus;
+}
+
+export function getPerformanceScore(
+  candidate: CandidateModel,
+  system: SystemProfile,
+  options?: { engine?: EngineId },
+): number {
   const ramBudget = system.freeRamGb ?? system.ramGb;
   const vramBudget = system.gpuVramGb ?? system.unifiedMemoryGb ?? 0;
   const ramHeadroom = Math.max(0, ramBudget - candidate.memoryProfile.recommendedRamGb);
@@ -48,16 +106,7 @@ export function getPerformanceScore(candidate: CandidateModel, system: SystemPro
     ? Math.max(0, vramBudget - candidate.memoryProfile.recommendedVramGb)
     : 2;
 
-  let runtimeBonus = 0.15;
-  if (candidate.runtime.includes("ollama") && system.runtimes.ollamaInstalled) {
-    runtimeBonus += 0.1;
-  }
-  if (candidate.runtime.includes("llamacpp") && system.runtimes.llamaCppInstalled) {
-    runtimeBonus += 0.1;
-  }
-  if (candidate.runtime.includes("transformers") && system.runtimes.pythonInstalled) {
-    runtimeBonus += 0.05;
-  }
+  const runtimeBonus = engineRuntimeBonus(options?.engine, system);
 
   const speedComponent = candidate.speedTier / 5;
   const memoryComponent = Math.min(1, (ramHeadroom + 2) / Math.max(candidate.memoryProfile.recommendedRamGb, 1));

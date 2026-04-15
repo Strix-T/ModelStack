@@ -10,6 +10,15 @@ function taskMatches(candidate: CandidateModel, intent: UserIntent): boolean {
   if (candidate.kind === "image") {
     return intent.requiresImageGeneration;
   }
+  if (candidate.kind === "reranker") {
+    return intent.requiresReranker;
+  }
+  if (candidate.kind === "speech_to_text") {
+    return intent.requiresSpeechToText;
+  }
+  if (candidate.kind === "text_to_speech") {
+    return intent.requiresSpeechSynthesis;
+  }
 
   if (intent.primaryUseCases.includes("coding")) {
     return candidate.tasks.includes("coding") || candidate.tasks.includes("text_generation");

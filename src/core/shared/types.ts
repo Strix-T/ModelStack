@@ -2,9 +2,12 @@ import type {
   cacheSnapshotSchema,
   candidateCollectionsSchema,
   candidateModelSchema,
+  candidateVariantSchema,
+  engineSchema,
   gpuBackendSchema,
   hardwareBandSchema,
   loadStrategySchema,
+  memoryEstimateBreakdownSchema,
   recommendationResultSchema,
   recommendedBundleSchema,
   runtimeSchema,
@@ -12,6 +15,9 @@ import type {
   userIntentSchema,
 } from "./schemas.js";
 
+export type EngineId = import("zod").infer<typeof engineSchema>;
+export type CandidateVariant = import("zod").infer<typeof candidateVariantSchema>;
+export type MemoryEstimateBreakdown = import("zod").infer<typeof memoryEstimateBreakdownSchema>;
 export type Runtime = import("zod").infer<typeof runtimeSchema>;
 export type HardwareBand = import("zod").infer<typeof hardwareBandSchema>;
 export type GpuBackend = import("zod").infer<typeof gpuBackendSchema>;

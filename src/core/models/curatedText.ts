@@ -78,6 +78,8 @@ export const curatedTextModels: CandidateModel[] = [
     gated: false,
     formats: ["gguf", "safetensors"],
     parameterClass: "medium",
+    contextWindow: 32768,
+    multilingualSupport: "high",
     memoryProfile: {
       minRamGb: 12,
       recommendedRamGb: 16,
@@ -100,6 +102,8 @@ export const curatedTextModels: CandidateModel[] = [
     gated: false,
     formats: ["gguf", "safetensors"],
     parameterClass: "medium",
+    contextWindow: 32768,
+    toolUseSupport: "strong",
     memoryProfile: {
       minRamGb: 14,
       recommendedRamGb: 18,
@@ -122,6 +126,8 @@ export const curatedTextModels: CandidateModel[] = [
     gated: false,
     formats: ["gguf", "safetensors"],
     parameterClass: "large",
+    contextWindow: 32768,
+    multilingualSupport: "high",
     memoryProfile: {
       minRamGb: 20,
       recommendedRamGb: 28,

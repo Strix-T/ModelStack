@@ -30,6 +30,18 @@ export function inferTasksFromHfItem(kind: CandidateModel["kind"], item: HfModel
     return ["text_to_image"];
   }
 
+  if (kind === "reranker") {
+    return ["reranking", "documents"];
+  }
+
+  if (kind === "speech_to_text") {
+    return ["speech_to_text"];
+  }
+
+  if (kind === "text_to_speech") {
+    return ["text_to_speech"];
+  }
+
   const tasks = new Set<string>(["text_generation", "general_chat"]);
 
   if (id.includes("coder") || tags.has("code") || tags.has("coding")) {
@@ -43,6 +55,18 @@ export function inferTasksFromHfItem(kind: CandidateModel["kind"], item: HfModel
   }
   if (pipeline.includes("text-generation") && (tags.has("conversational") || id.includes("chat"))) {
     tasks.add("writing");
+  }
+  if (id.includes("rerank") || pipeline.includes("rerank")) {
+    tasks.add("reranking");
+  }
+  if (pipeline.includes("automatic-speech-recognition") || id.includes("whisper")) {
+    tasks.add("speech_to_text");
+  }
+  if (pipeline.includes("text-to-speech") || id.includes("tts")) {
+    tasks.add("text_to_speech");
+  }
+  if (tags.has("tool") || id.includes("tool") || id.includes("function")) {
+    tasks.add("tool_use");
   }
 
   return [...tasks];

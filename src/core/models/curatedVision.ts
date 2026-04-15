@@ -22,6 +22,7 @@ export const curatedVisionModels: CandidateModel[] = [
       minVramGb: 6,
     },
     discoveryConfidence: "medium",
+    ocrStrength: "weak",
     notes: ["Lightweight vision helper; better for captions and simple image tasks than long doc QA."],
   },
   {
@@ -45,6 +46,7 @@ export const curatedVisionModels: CandidateModel[] = [
       minVramGb: 8,
     },
     discoveryConfidence: "medium",
+    ocrStrength: "strong",
     notes: ["Good fit for screenshots and scanned documents."],
   },
   {

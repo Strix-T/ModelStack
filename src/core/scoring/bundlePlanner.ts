@@ -1,15 +1,26 @@
+import { inferStackArchetype } from "../archetypes/archetypes.js";
+import { candidateSupportsEngine, formatMatchesEngine } from "../engines/engineCompatibility.js";
+import { getEngineDefinition } from "../engines/engineRegistry.js";
+import type { EngineSelection } from "../engines/engineSelector.js";
+import { selectConcreteEnginePairForCandidate, selectEngine } from "../engines/engineSelector.js";
+import { buildInstallSteps } from "../output/installSteps.js";
 import type {
   CandidateCollections,
   CandidateModel,
+  EngineId,
+  MemoryEstimateBreakdown,
   RecommendedBundle,
   SystemProfile,
   UserIntent,
 } from "../shared/types.js";
+import { explainBundleScore } from "./explainScore.js";
 import { isCandidateEligible } from "./eligibility.js";
-import { chooseBundleLoadStrategy, estimatePeakRam, estimatePeakVram } from "./loadStrategy.js";
+import { chooseBundleLoadStrategy, estimatePeakRam, estimatePeakVram, type BundleRamParts } from "./loadStrategy.js";
 import { getPerformanceScore } from "./performance.js";
 import { getPreferenceMultiplier } from "./preferences.js";
 import { getQualityScore } from "./quality.js";
+import { getBundleScoringWeights } from "./scoringProfiles.js";
+import { selectVariantForModel } from "./variantSelector.js";
 
 export type BundleScorecard = {
   bundle: RecommendedBundle;
@@ -27,11 +38,167 @@ type ScoredCandidate = {
   overall: number;
 };
 
-function rankCandidates(candidates: CandidateModel[], system: SystemProfile, intent: UserIntent): ScoredCandidate[] {
+function overheadForEngine(engine: EngineId): number {
+  switch (engine) {
+    case "ollama":
+      return 0.7;
+    case "llamacpp":
+      return 0.55;
+    case "lm_studio":
+      return 0.85;
+    case "transformers":
+      return 1.6;
+    case "vllm":
+      return 2.3;
+    case "mlx":
+      return 1.05;
+    default:
+      return 1.1;
+  }
+}
+
+function kvCacheHeuristicGb(intent: UserIntent): number {
+  switch (intent.contextPreference) {
+    case "long_context":
+      return 2.6;
+    case "standard":
+      return 1.2;
+    default:
+      return 1.5;
+  }
+}
+
+function buildMemoryBreakdown(
+  engine: EngineId,
+  intent: UserIntent,
+  textRamGb: number,
+  parts: BundleRamParts,
+  loadStrategy: RecommendedBundle["loadStrategy"],
+): MemoryEstimateBreakdown {
+  const secondaryModelsRamGb =
+    adjustedRam(parts.embeddingModel, loadStrategy) +
+    adjustedRam(parts.visionModel, loadStrategy) +
+    adjustedRam(parts.imageModel, loadStrategy) +
+    adjustedRam(parts.rerankerModel, loadStrategy) +
+    adjustedRam(parts.speechToTextModel, loadStrategy) +
+    adjustedRam(parts.textToSpeechModel, loadStrategy);
+
+  const baseModelRamGb = textRamGb;
+  const engineOverheadGb = overheadForEngine(engine);
+  const kvCacheRamGb = kvCacheHeuristicGb(intent);
+
+  return {
+    baseModelRamGb,
+    engineOverheadGb,
+    kvCacheRamGb,
+    secondaryModelsRamGb,
+    totalEstimatedPeakRamGb: estimatePeakRam(parts, loadStrategy),
+    totalEstimatedPeakVramGb: estimatePeakVram(parts, loadStrategy),
+    source: parts.textRamGbOverride !== undefined ? "variant_heuristic" : "heuristic",
+  };
+}
+
+function adjustedRam(model: CandidateModel | undefined, loadStrategy: RecommendedBundle["loadStrategy"]): number {
+  if (!model) {
+    return 0;
+  }
+  const useRec = loadStrategy === "always_loaded" || loadStrategy === "on_demand_secondary";
+  const base = useRec ? model.memoryProfile.recommendedRamGb : model.memoryProfile.minRamGb;
+  return base * (model.formats.includes("gguf") ? 0.88 : 1);
+}
+
+function simplicityMultiplier(engine: EngineId, intent: UserIntent): number {
+  const diff = getEngineDefinition(engine).installDifficulty;
+  if (intent.installComfort === "simple" && diff !== "simple") {
+    return 0.9;
+  }
+  if (intent.installComfort === "moderate" && diff === "advanced") {
+    return 0.94;
+  }
+  return 1;
+}
+
+function resolveTextPoolAndEngine(
+  collections: CandidateCollections,
+  system: SystemProfile,
+  intent: UserIntent,
+): { selection: EngineSelection; textPool: CandidateModel[] } {
+  let selection = selectEngine(system, intent);
+  const tryEngine = (engine: EngineId) =>
+    collections.text.filter(
+      (c) =>
+        isCandidateEligible(c, system, intent) &&
+        candidateSupportsEngine(c, engine) &&
+        formatMatchesEngine(engine, c.formats, intent.formatPreference),
+    );
+
+  let pool = tryEngine(selection.primary);
+  if (pool.length === 0) {
+    pool = tryEngine(selection.fallback);
+    if (pool.length > 0) {
+      selection = {
+        ...selection,
+        primary: selection.fallback,
+        reasons: [...selection.reasons, `Primary engine switched to ${getEngineDefinition(selection.fallback).label} for model compatibility.`],
+      };
+    }
+  }
+  if (pool.length === 0) {
+    const order: EngineId[] = ["ollama", "transformers", "llamacpp", "other"];
+    for (const e of order) {
+      pool = tryEngine(e);
+      if (pool.length > 0) {
+        selection = {
+          primary: e,
+          fallback: selection.primary,
+          reasons: [`Using ${getEngineDefinition(e).label} so at least one text model matches runtimes and format preference.`],
+          warnings: selection.warnings,
+        };
+        break;
+      }
+    }
+  }
+  if (pool.length === 0) {
+    pool = collections.text.filter((c) => isCandidateEligible(c, system, intent));
+    selection = {
+      primary: "other",
+      fallback: "transformers",
+      reasons: ["No engine-specific filter matched; showing best-effort text models."],
+      warnings: [...selection.warnings, "Verify engine and format compatibility manually."],
+    };
+  }
+
+  if (pool.length > 0 && selection.primary === "other") {
+    const anchor = [...pool].sort(
+      (a, b) => b.qualityTier - a.qualityTier || a.memoryProfile.minRamGb - b.memoryProfile.minRamGb,
+    )[0]!;
+    const refined = selectConcreteEnginePairForCandidate(anchor, system, intent);
+    if (refined.primary !== "other") {
+      selection = {
+        ...selection,
+        primary: refined.primary,
+        fallback: refined.fallback,
+        reasons: [
+          ...selection.reasons,
+          `Suggested runtime: ${getEngineDefinition(refined.primary).label} for ${anchor.id} (matches its on-disk format).`,
+        ],
+      };
+    }
+  }
+
+  return { selection, textPool: pool };
+}
+
+function rankCandidates(
+  candidates: CandidateModel[],
+  system: SystemProfile,
+  intent: UserIntent,
+  engine: EngineId,
+): ScoredCandidate[] {
   return candidates
     .filter((candidate) => isCandidateEligible(candidate, system, intent))
     .map((candidate) => {
-      const performance = getPerformanceScore(candidate, system);
+      const performance = getPerformanceScore(candidate, system, { engine });
       const quality = getQualityScore(candidate, intent);
       const preference = getPreferenceMultiplier(candidate, intent);
       return {
@@ -51,6 +218,7 @@ function pickTop(
   fallback: CandidateModel[],
   system: SystemProfile,
   intent: UserIntent,
+  engine: EngineId,
 ): CandidateModel[] {
   const selected = scored.slice(0, count).map((item) => item.candidate);
   if (selected.length > 0) {
@@ -59,6 +227,7 @@ function pickTop(
   return fallback
     .filter((candidate) => !candidate.gated)
     .filter((candidate) => isCandidateEligible(candidate, system, intent))
+    .filter((candidate) => candidateSupportsEngine(candidate, engine))
     .sort((a, b) => a.memoryProfile.minRamGb - b.memoryProfile.minRamGb || a.id.localeCompare(b.id))
     .slice(0, count);
 }
@@ -108,16 +277,38 @@ export function collectNoFitExplanations(
     }
   }
 
+  if (intent.requiresReranker && collections.reranker.length > 0) {
+    const ok = collections.reranker.some((c) => isCandidateEligible(c, system, intent));
+    if (!ok) {
+      lines.push("Reranking was requested, but no reranker model fit your current constraints.");
+    }
+  }
+
+  if (intent.requiresSpeechToText && collections.speechToText.length > 0) {
+    const ok = collections.speechToText.some((c) => isCandidateEligible(c, system, intent));
+    if (!ok) {
+      lines.push("Speech-to-text was requested, but no speech model fit your current constraints.");
+    }
+  }
+
+  if (intent.requiresSpeechSynthesis && collections.textToSpeech.length > 0) {
+    const ok = collections.textToSpeech.some((c) => isCandidateEligible(c, system, intent));
+    if (!ok) {
+      lines.push("Text-to-speech was requested, but no TTS model fit your current constraints.");
+    }
+  }
+
   return lines;
 }
 
-function buildWarnings(parts: {
-  textModel?: CandidateModel;
-  embeddingModel?: CandidateModel;
-  visionModel?: CandidateModel;
-  imageModel?: CandidateModel;
-}, system: SystemProfile, intent: UserIntent, estimatedPeakRamGb: number): string[] {
-  const warnings: string[] = [];
+function buildWarnings(
+  parts: BundleRamParts,
+  system: SystemProfile,
+  intent: UserIntent,
+  estimatedPeakRamGb: number,
+  engineWarnings: string[],
+): string[] {
+  const warnings: string[] = [...engineWarnings];
   if (intent.requiresEmbeddings && parts.embeddingModel) {
     warnings.push("Switching embedding models later requires re-indexing your documents.");
   }
@@ -136,13 +327,16 @@ function buildWarnings(parts: {
   return warnings;
 }
 
-function buildReasons(parts: {
-  textModel?: CandidateModel;
-  embeddingModel?: CandidateModel;
-  visionModel?: CandidateModel;
-  imageModel?: CandidateModel;
-}, intent: UserIntent, loadStrategy: RecommendedBundle["loadStrategy"], speed: number, quality: number): string[] {
+function buildReasons(
+  parts: BundleRamParts,
+  intent: UserIntent,
+  loadStrategy: RecommendedBundle["loadStrategy"],
+  speed: number,
+  quality: number,
+  engineReasons: string[],
+): string[] {
   const reasons = [
+    ...engineReasons,
     `${parts.textModel?.id ?? "Primary model"} anchors the stack for ${intent.primaryUseCases.join(", ").replaceAll("_", " ")} workloads.`,
     `Load strategy ${loadStrategy} is estimated to keep the total stack within a realistic local budget based on detected hardware and current heuristics.`,
   ];
@@ -155,27 +349,11 @@ function buildReasons(parts: {
   if (parts.imageModel) {
     reasons.push(`${parts.imageModel.id} adds image generation without dominating the full bundle score.`);
   }
+  if (parts.rerankerModel) {
+    reasons.push(`${parts.rerankerModel.id} refines retrieved chunks for higher precision RAG.`);
+  }
   reasons.push(speed >= quality ? "This stack leans faster than average for its capability set." : "This stack leans toward better output quality over raw speed.");
   return reasons;
-}
-
-function buildNextSteps(parts: {
-  textModel?: CandidateModel;
-  embeddingModel?: CandidateModel;
-  visionModel?: CandidateModel;
-  imageModel?: CandidateModel;
-}): string[] {
-  const steps = ["Install or confirm the runtime needed for the selected text model."];
-  if (parts.embeddingModel) {
-    steps.push("Create one document index with the recommended embedding model and keep it fixed.");
-  }
-  if (parts.visionModel) {
-    steps.push("Load the vision model on demand for screenshots and scanned PDFs.");
-  }
-  if (parts.imageModel) {
-    steps.push("Expect image generation to consume the largest burst of memory in this stack.");
-  }
-  return steps;
 }
 
 function deriveFitState(
@@ -277,95 +455,155 @@ export function buildBundleScorecards(
   system: SystemProfile,
   intent: UserIntent,
 ): BundleScorecard[] {
-  const rankedText = rankCandidates(collections.text, system, intent);
-  const rankedEmbedding = rankCandidates(collections.embedding, system, intent);
-  const rankedVision = rankCandidates(collections.vision, system, intent);
-  const rankedImage = rankCandidates(collections.image, system, intent);
+  const { selection: enginePick, textPool } = resolveTextPoolAndEngine(collections, system, intent);
+  const engine = enginePick.primary;
 
-  const textCandidates = pickTop(rankedText, 3, collections.text, system, intent);
-  const embeddingCandidates = intent.requiresEmbeddings ? pickTop(rankedEmbedding, 2, collections.embedding, system, intent) : [undefined];
-  const visionCandidates = intent.requiresVision ? pickTop(rankedVision, 2, collections.vision, system, intent) : [undefined];
-  const imageCandidates = intent.requiresImageGeneration ? pickTop(rankedImage, 2, collections.image, system, intent) : [undefined];
+  const rankedText = rankCandidates(textPool, system, intent, engine);
+  const rankedEmbedding = rankCandidates(collections.embedding, system, intent, engine);
+  const rankedVision = rankCandidates(collections.vision, system, intent, engine);
+  const rankedImage = rankCandidates(collections.image, system, intent, engine);
+  const rankedReranker = rankCandidates(collections.reranker ?? [], system, intent, engine);
+  const rankedStt = rankCandidates(collections.speechToText ?? [], system, intent, engine);
+  const rankedTts = rankCandidates(collections.textToSpeech ?? [], system, intent, engine);
+
+  const textCandidates = pickTop(rankedText, 3, collections.text, system, intent, engine);
+  const embeddingCandidates = intent.requiresEmbeddings
+    ? pickTop(rankedEmbedding, 2, collections.embedding, system, intent, engine)
+    : [undefined];
+  const visionCandidates = intent.requiresVision ? pickTop(rankedVision, 2, collections.vision, system, intent, engine) : [undefined];
+  const imageCandidates = intent.requiresImageGeneration
+    ? pickTop(rankedImage, 2, collections.image, system, intent, engine)
+    : [undefined];
+  const rerankerCandidates = intent.requiresReranker ? pickTop(rankedReranker, 1, collections.reranker ?? [], system, intent, engine) : [undefined];
+  const sttCandidates = intent.requiresSpeechToText ? pickTop(rankedStt, 1, collections.speechToText ?? [], system, intent, engine) : [undefined];
+  const ttsCandidates = intent.requiresSpeechSynthesis ? pickTop(rankedTts, 1, collections.textToSpeech ?? [], system, intent, engine) : [undefined];
 
   const scorecards: BundleScorecard[] = [];
+  const weights = getBundleScoringWeights(intent);
 
   for (const textModel of textCandidates) {
+    const variantPick = selectVariantForModel(textModel, engine, intent, system);
+    const textRamGbOverride = variantPick.variant?.estimatedRamGb;
+
     for (const embeddingModel of embeddingCandidates) {
       for (const visionModel of visionCandidates) {
         for (const imageModel of imageCandidates) {
-          const loadStrategy = chooseBundleLoadStrategy(system, {
-            textModel,
-            embeddingModel,
-            visionModel,
-            imageModel,
-          });
-          const estimatedPeakRamGb = estimatePeakRam({ textModel, embeddingModel, visionModel, imageModel }, loadStrategy);
-          const estimatedPeakVramGb = estimatePeakVram({ textModel, embeddingModel, visionModel, imageModel }, loadStrategy);
+          for (const rerankerModel of rerankerCandidates) {
+            for (const speechToTextModel of sttCandidates) {
+              for (const textToSpeechModel of ttsCandidates) {
+                const ramParts: BundleRamParts = {
+                  textModel,
+                  embeddingModel,
+                  visionModel,
+                  imageModel,
+                  rerankerModel,
+                  speechToTextModel,
+                  textToSpeechModel,
+                  textRamGbOverride,
+                };
 
-          const bundleSpeed =
-            (textModel ? getPerformanceScore(textModel, system) : 0) * 0.55 +
-            (embeddingModel ? getPerformanceScore(embeddingModel, system) : 0.1) * 0.1 +
-            (visionModel ? getPerformanceScore(visionModel, system) : 0.05) * 0.2 +
-            (imageModel ? getPerformanceScore(imageModel, system) : 0.05) * 0.15;
+                const loadStrategy = chooseBundleLoadStrategy(system, ramParts);
+                const estimatedPeakRamGb = estimatePeakRam(ramParts, loadStrategy);
+                const estimatedPeakVramGb = estimatePeakVram(ramParts, loadStrategy);
 
-          const bundleQuality =
-            (textModel ? getQualityScore(textModel, intent) : 0) * 0.55 +
-            (embeddingModel ? getQualityScore(embeddingModel, intent) : 0.1) * 0.15 +
-            (visionModel ? getQualityScore(visionModel, intent) : 0.1) * 0.15 +
-            (imageModel ? getQualityScore(imageModel, intent) : 0.1) * 0.15;
+                const bundleSpeed =
+                  (textModel ? getPerformanceScore(textModel, system, { engine }) : 0) * 0.45 +
+                  (embeddingModel ? getPerformanceScore(embeddingModel, system, { engine }) : 0.08) * 0.12 +
+                  (visionModel ? getPerformanceScore(visionModel, system, { engine }) : 0.04) * 0.15 +
+                  (imageModel ? getPerformanceScore(imageModel, system, { engine }) : 0.04) * 0.14 +
+                  (rerankerModel ? getPerformanceScore(rerankerModel, system, { engine }) : 0.03) * 0.08 +
+                  (speechToTextModel ? getPerformanceScore(speechToTextModel, system, { engine }) : 0.02) * 0.03 +
+                  (textToSpeechModel ? getPerformanceScore(textToSpeechModel, system, { engine }) : 0.02) * 0.03;
 
-          const localScore = [textModel, embeddingModel, visionModel, imageModel].filter(Boolean).every((item) => item?.localFriendly)
-            ? 1
-            : 0.55;
-          const preferenceMultiplier = textModel ? getPreferenceMultiplier(textModel, intent) : 1;
-          const memoryPenalty = estimatedPeakRamGb > (system.freeRamGb ?? system.ramGb) ? 0.2 : 0;
-          const overall = Math.max(0, (bundleSpeed * 0.4 + bundleQuality * 0.45 + localScore * 0.15) * preferenceMultiplier - memoryPenalty);
-          const fitConfidence = getFitConfidence(system, loadStrategy, estimatedPeakRamGb, estimatedPeakVramGb);
-          const fitState = deriveFitState(system, loadStrategy, fitConfidence, estimatedPeakRamGb);
-          const whyHeldBack = buildWhyHeldBack(system, estimatedPeakRamGb);
+                const bundleQuality =
+                  (textModel ? getQualityScore(textModel, intent) : 0) * 0.45 +
+                  (embeddingModel ? getQualityScore(embeddingModel, intent) : 0.08) * 0.14 +
+                  (visionModel ? getQualityScore(visionModel, intent) : 0.05) * 0.15 +
+                  (imageModel ? getQualityScore(imageModel, intent) : 0.05) * 0.14 +
+                  (rerankerModel ? getQualityScore(rerankerModel, intent) : 0.04) * 0.07 +
+                  (speechToTextModel ? getQualityScore(speechToTextModel, intent) : 0.03) * 0.03 +
+                  (textToSpeechModel ? getQualityScore(textToSpeechModel, intent) : 0.03) * 0.02;
 
-          const warnings = buildWarnings(
-            { textModel, embeddingModel, visionModel, imageModel },
-            system,
-            intent,
-            estimatedPeakRamGb,
-          );
-          const reasons = buildReasons(
-            { textModel, embeddingModel, visionModel, imageModel },
-            intent,
-            loadStrategy,
-            bundleSpeed,
-            bundleQuality,
-          );
+                const localScore = [textModel, embeddingModel, visionModel, imageModel, rerankerModel, speechToTextModel, textToSpeechModel]
+                  .filter(Boolean)
+                  .every((item) => item?.localFriendly)
+                  ? 1
+                  : 0.55;
+                const preferenceMultiplier = textModel ? getPreferenceMultiplier(textModel, intent) : 1;
+                const memoryPenalty = estimatedPeakRamGb > (system.freeRamGb ?? system.ramGb) ? 0.2 : 0;
+                const sim = simplicityMultiplier(engine, intent);
+                const overall = Math.max(
+                  0,
+                  (bundleSpeed * weights.speed + bundleQuality * weights.quality + localScore * weights.local) * preferenceMultiplier * sim -
+                    memoryPenalty +
+                    weights.simplicity * sim * 0.05,
+                );
 
-          scorecards.push({
-            bundle: {
-              label: "best_overall",
-              textModel,
-              embeddingModel,
-              visionModel,
-              imageModel,
-              loadStrategy,
-              score: Number(overall.toFixed(3)),
-              reasons,
-              warnings,
-              estimatedPeakRamGb,
-              estimatedPeakVramGb,
-              fitConfidence,
-              fitState,
-              memoryEstimateSource: "heuristic",
-              whyHeldBack,
-              nextSteps: buildNextSteps({ textModel, embeddingModel, visionModel, imageModel }),
-            },
-            overall,
-            speed: bundleSpeed,
-            quality: bundleQuality,
-            local: localScore,
-          });
+                const fitConfidence = getFitConfidence(system, loadStrategy, estimatedPeakRamGb, estimatedPeakVramGb);
+                const fitState = deriveFitState(system, loadStrategy, fitConfidence, estimatedPeakRamGb);
+                const whyHeldBack = buildWhyHeldBack(system, estimatedPeakRamGb);
+
+                const textGb = textRamGbOverride ?? textModel.memoryProfile.recommendedRamGb;
+                const memoryBreakdown = buildMemoryBreakdown(engine, intent, textGb, ramParts, loadStrategy);
+
+                const bundleBase: RecommendedBundle = {
+                  label: "best_overall",
+                  textModel,
+                  embeddingModel,
+                  visionModel,
+                  imageModel,
+                  rerankerModel,
+                  speechToTextModel,
+                  textToSpeechModel,
+                  loadStrategy,
+                  score: Number(overall.toFixed(3)),
+                  reasons: [],
+                  warnings: [],
+                  estimatedPeakRamGb,
+                  estimatedPeakVramGb,
+                  fitConfidence,
+                  fitState,
+                  memoryEstimateSource: variantPick.variant ? "variant_heuristic" : "heuristic",
+                  whyHeldBack,
+                  nextSteps: [],
+                  recommendedEngine: engine,
+                  fallbackEngine: enginePick.fallback,
+                  engineReasons: enginePick.reasons,
+                  engineWarnings: enginePick.warnings.length > 0 ? enginePick.warnings : undefined,
+                  selectedTextVariant: variantPick.variant,
+                  variantReasons: variantPick.reasons,
+                  skippedStrongerVariants: variantPick.skippedStronger.length > 0 ? variantPick.skippedStronger : undefined,
+                  memoryBreakdown,
+                  scoreExplanation: [],
+                  stackArchetype: undefined,
+                };
+
+                bundleBase.reasons = buildReasons(ramParts, intent, loadStrategy, bundleSpeed, bundleQuality, enginePick.reasons);
+                bundleBase.warnings = buildWarnings(ramParts, system, intent, estimatedPeakRamGb, enginePick.warnings);
+                bundleBase.nextSteps = buildInstallSteps(engine, ramParts, variantPick.variant);
+                bundleBase.stackArchetype = inferStackArchetype(intent, bundleBase);
+                bundleBase.scoreExplanation = explainBundleScore(bundleBase, intent);
+
+                scorecards.push({
+                  bundle: bundleBase,
+                  overall,
+                  speed: bundleSpeed,
+                  quality: bundleQuality,
+                  local: localScore,
+                });
+              }
+            }
+          }
         }
       }
     }
   }
 
-  return scorecards.sort((a, b) => b.overall - a.overall || (b.speed - a.speed) || a.bundle.textModel?.id.localeCompare(b.bundle.textModel?.id ?? "") || 0);
+  return scorecards.sort(
+    (a, b) =>
+      b.overall - a.overall ||
+      b.speed - a.speed ||
+      a.bundle.textModel?.id.localeCompare(b.bundle.textModel?.id ?? "") ||
+      0,
+  );
 }

@@ -14,6 +14,18 @@ export function getQualityScore(candidate: CandidateModel, intent: UserIntent): 
   if (intent.requiresImageGeneration && candidate.kind === "image") {
     taskBonus += 0.2;
   }
+  if (intent.requiresReranker && candidate.kind === "reranker") {
+    taskBonus += 0.22;
+  }
+  if (intent.requiresSpeechToText && candidate.kind === "speech_to_text") {
+    taskBonus += 0.18;
+  }
+  if (intent.requiresSpeechSynthesis && candidate.kind === "text_to_speech") {
+    taskBonus += 0.18;
+  }
+  if (intent.primaryUseCases.includes("agents") && (candidate.toolUseSupport === "strong" || candidate.tasks.some((t) => t.includes("tool")))) {
+    taskBonus += 0.12;
+  }
 
   return Math.min(1, candidate.qualityTier / 5 + taskBonus);
 }

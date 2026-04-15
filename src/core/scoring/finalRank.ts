@@ -112,16 +112,26 @@ function chooseRankedBundle(
 function bundleDifferenceCount(left: RecommendedBundle, right: RecommendedBundle): number {
   const leftParts = [
     left.textModel?.id,
+    left.selectedTextVariant?.variantId,
     left.embeddingModel?.id,
     left.visionModel?.id,
     left.imageModel?.id,
+    left.rerankerModel?.id,
+    left.speechToTextModel?.id,
+    left.textToSpeechModel?.id,
+    left.recommendedEngine,
     left.loadStrategy,
   ];
   const rightParts = [
     right.textModel?.id,
+    right.selectedTextVariant?.variantId,
     right.embeddingModel?.id,
     right.visionModel?.id,
     right.imageModel?.id,
+    right.rerankerModel?.id,
+    right.speechToTextModel?.id,
+    right.textToSpeechModel?.id,
+    right.recommendedEngine,
     right.loadStrategy,
   ];
 
@@ -233,7 +243,18 @@ function uniqueLines(lines: Array<string | undefined>): string[] {
 }
 
 function signature(bundle: RecommendedBundle): string {
-  return [bundle.textModel?.id, bundle.embeddingModel?.id, bundle.visionModel?.id, bundle.imageModel?.id, bundle.loadStrategy]
+  return [
+    bundle.textModel?.id,
+    bundle.selectedTextVariant?.variantId,
+    bundle.embeddingModel?.id,
+    bundle.visionModel?.id,
+    bundle.imageModel?.id,
+    bundle.rerankerModel?.id,
+    bundle.speechToTextModel?.id,
+    bundle.textToSpeechModel?.id,
+    bundle.recommendedEngine,
+    bundle.loadStrategy,
+  ]
     .filter(Boolean)
     .join("|");
 }

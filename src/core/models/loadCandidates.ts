@@ -74,6 +74,9 @@ async function enrichAllCandidates(
     embedding: await enrichList(collections.embedding, client, warnings),
     vision: await enrichList(collections.vision, client, warnings),
     image: await enrichList(collections.image, client, warnings),
+    reranker: await enrichList(collections.reranker ?? [], client, warnings),
+    speechToText: await enrichList(collections.speechToText ?? [], client, warnings),
+    textToSpeech: await enrichList(collections.textToSpeech ?? [], client, warnings),
   };
 }
 
@@ -100,5 +103,8 @@ function emptyCollections(): CandidateCollections {
     embedding: [],
     vision: [],
     image: [],
+    reranker: [],
+    speechToText: [],
+    textToSpeech: [],
   };
 }

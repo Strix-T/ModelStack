@@ -21,5 +21,9 @@ export function getPreferenceMultiplier(candidate: CandidateModel, intent: UserI
     multiplier -= 0.1;
   }
 
+  if (intent.requiresLongContext && (candidate.contextWindow ?? 0) >= 32000) {
+    multiplier += 0.08;
+  }
+
   return Math.max(0.4, multiplier);
 }
